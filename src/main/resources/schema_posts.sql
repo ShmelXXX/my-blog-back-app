@@ -4,13 +4,22 @@ create table if not exists posts(
     title varchar(256) not null,
     text varchar(256) not null,
     likes_count integer not null,
-    comments_count integer not null
+    comments_count integer not null,
+    image_file_name varchar(255)
     );
 
 -- Таблица тегов
 create table if not exists tags(
   id bigserial primary key,
   name varchar(50) not null unique
+    );
+
+-- Таблица комментариев
+create table if not exists comments(
+    id bigserial primary key,
+    text text not null,
+    post_id bigint not null,
+    foreign key (post_id) references posts(id) on delete cascade
     );
 
 -- Связь постов и тегов
@@ -40,3 +49,11 @@ insert into post_tags(post_id, tag_id) values (2, (select id from tags where nam
 
 insert into post_tags(post_id, tag_id) values (3, (select id from tags where name = 'tag_3'));
 
+insert into comments(text, post_id) values ( 'Коммент 1 на пост 1!', 1);
+insert into comments(text, post_id) values ( 'Коммент 2 на пост 1', 1);
+insert into comments(text, post_id) values ('Коммент 3 на пост 1', 1);
+
+insert into comments(text, post_id) values ('Коммент 1 на пост 2', 2);
+insert into comments(text, post_id) values ('Коммент 2 на пост 2', 2);
+
+insert into comments(text, post_id) values ('Коммент 1 на пост 3', 3);
