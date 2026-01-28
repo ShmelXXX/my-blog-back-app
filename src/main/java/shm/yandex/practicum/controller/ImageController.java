@@ -1,0 +1,199 @@
+package shm.yandex.practicum.controller;
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import shm.yandex.practicum.model.Post;
+import shm.yandex.practicum.service.PostService;
+
+import java.io.File;
+import java.nio.file.Files;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
+
+@RestController
+@RequestMapping("/api/posts/{id}/image")
+@CrossOrigin(origins = "http://localhost", allowCredentials = "true")
+public class ImageController {
+
+    private final PostService postService;
+    private final Random random = new Random();
+
+    private static final String UPLOAD_DIR = "c:/temp/uploads";
+
+    public ImageController(PostService postService) {
+        this.postService = postService;
+        // Создать директорию, если не существует
+        File dir = new File(UPLOAD_DIR);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+    }
+
+    // /api/posts/{id}/image - загрузка изображения поста
+    @PutMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> uploadImage(
+            @PathVariable("id") Long postId,
+            @RequestParam("image") MultipartFile file) {
+        try {
+
+            if (file == null || file.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "No file found"));
+            }
+
+            Post post = postService.findById(postId);
+            if (post == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            String originalFilename = file.getOriginalFilename();
+            String fileExtension = "";
+            if (originalFilename != null && originalFilename.contains(".")) {
+                fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
+            }
+
+            String newFileName = "post_" + postId + "_" + System.currentTimeMillis() + fileExtension;
+
+            // Сохраняем файл локально (временное решение вместо MinIO)
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Image uploaded successfully");
+            response.put("fileName", newFileName);
+            response.put("postId", postId);
+
+            try {
+                // Сохраняем файл
+                File uploadFile = new File(UPLOAD_DIR + "/" + newFileName);
+                file.transferTo(uploadFile);
+
+                // Обновляем пост в базе данных
+                post.setImageFileName(newFileName);
+                postService.update(post);
+
+
+            } catch (Exception e) {
+                response.put("url", "Error saved file " + e.getMessage());
+
+            }
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            System.err.println("Error uploading image: " + e.getMessage());
+
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "Upload failed");
+            error.put("message", e.getMessage());
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(error);
+        }
+    }
+
+    // GET  /api/posts/{id}/image - получение изображения поста
+    @GetMapping
+    public ResponseEntity<byte[]> getImage(@PathVariable("id") Long postId) {
+        try {
+            Post post = postService.findById(postId);
+            if (post == null || post.getImageFileName() == null) {
+                return generateFallbackImage(postId);
+            }
+
+            // Пытаемся получить изображение из локальной папки
+            String fileName = post.getImageFileName();
+            File imageFile = new File(UPLOAD_DIR + "/" + fileName);
+
+            if (!imageFile.exists()) {
+                System.err.println("Image file not found: " + imageFile.getAbsolutePath());
+                return generateFallbackImage(postId);
+            }
+
+            byte[] bytes = Files.readAllBytes(imageFile.toPath());
+
+            String contentType = determineContentType(fileName);
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "inline; filename=\"" + post.getImageFileName() + "\"")
+                    .body(bytes);
+
+        } catch (Exception e) {
+            System.err.println("Error getting image: " + e.getMessage());
+            return generateFallbackImage(postId);
+        }
+    }
+
+    // DELETE /api/posts/{id}/image - удаление изображения поста
+    @DeleteMapping
+    public ResponseEntity<Map<String, Object>> deleteImage(@PathVariable("id") Long postId) {
+        try {
+            Post post = postService.findById(postId);
+            if (post == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            if (post.getImageFileName() != null) {
+                postService.update(post);
+            }
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Image deleted successfully");
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            System.err.println("Error deleting image: " + e.getMessage());
+
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "Delete failed");
+            error.put("message", e.getMessage());
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(error);
+        }
+    }
+
+    // генерация изображения по умолчанию
+    private ResponseEntity<byte[]> generateFallbackImage(Long postId) {
+        try {
+            String svg = String.format(
+                    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"200\">" +
+                            "<rect width=\"400\" height=\"200\" fill=\"#%06x\"/>" +
+                            "<text x=\"50%%\" y=\"50%%\" text-anchor=\"middle\" dy=\".3em\" " +
+                            "font-family=\"Arial\" font-size=\"24\" fill=\"white\">" +
+                            "Post %d" +
+                            "</text>" +
+                            "</svg>",
+                    random.nextInt(0xFFFFFF),
+                    postId
+            );
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.valueOf("image/svg+xml"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "inline; filename=\"post-" + postId + ".svg\"")
+                    .body(svg.getBytes());
+
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    // Формируем content type по расширению файла
+    private String determineContentType(String fileName) {
+        if (fileName == null) {
+            return "image/jpeg";
+        }
+
+        fileName = fileName.toLowerCase();
+
+        if (fileName.endsWith(".png")) return "image/png";
+        if (fileName.endsWith(".gif")) return "image/gif";
+        if (fileName.endsWith(".bmp")) return "image/bmp";
+
+        return "image/jpeg";
+    }
+}
