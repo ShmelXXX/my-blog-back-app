@@ -7,10 +7,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import shm.yandex.practicum.model.Post;
+import shm.yandex.practicum.service.MinioService;
 import shm.yandex.practicum.service.PostService;
 
-import java.io.File;
-import java.nio.file.Files;
+import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
@@ -21,17 +21,12 @@ import java.util.Random;
 public class ImageController {
 
     private final PostService postService;
+    private final MinioService minioService;
     private final Random random = new Random();
 
-    private static final String UPLOAD_DIR = "c:/temp/uploads";
-
-    public ImageController(PostService postService) {
+    public ImageController(PostService postService, MinioService minioService) {
         this.postService = postService;
-        // Создать директорию, если не существует
-        File dir = new File(UPLOAD_DIR);
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
+        this.minioService = minioService;
     }
 
     // /api/posts/{id}/image - загрузка изображения поста
@@ -51,35 +46,38 @@ public class ImageController {
                 return ResponseEntity.notFound().build();
             }
 
-            String originalFilename = file.getOriginalFilename();
-            String fileExtension = "";
-            if (originalFilename != null && originalFilename.contains(".")) {
-                fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
+            String fileName = minioService.generateFileName(
+                    file.getOriginalFilename(),
+                    postId
+            );
+
+            String savedFileName = minioService.uploadFile(file, fileName);
+
+            // Удаляем старое изображение если есть
+            if (post.getImageFileName() != null && !post.getImageFileName().isEmpty()) {
+                try {
+                    minioService.deleteFile(post.getImageFileName());
+                } catch (Exception e) {
+                    System.err.println("Warning: Could not delete old file: " + e.getMessage());
+                }
             }
 
-            String newFileName = "post_" + postId + "_" + System.currentTimeMillis() + fileExtension;
+            post.setImageFileName(savedFileName);
+            postService.update(post);
 
-            // Сохраняем файл локально (временное решение вместо MinIO)
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "Image uploaded successfully");
-            response.put("fileName", newFileName);
+            response.put("fileName", savedFileName);
             response.put("postId", postId);
 
             try {
-                // Сохраняем файл
-                File uploadFile = new File(UPLOAD_DIR + "/" + newFileName);
-                file.transferTo(uploadFile);
-
-                // Обновляем пост в базе данных
-                post.setImageFileName(newFileName);
-                postService.update(post);
-
-
+                String publicUrl = minioService.getPublicUrl(savedFileName);
+                response.put("url", publicUrl);
             } catch (Exception e) {
-                response.put("url", "Error saved file " + e.getMessage());
-
+                response.put("url", "Error generating URL: " + e.getMessage());
             }
+
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
@@ -103,24 +101,16 @@ public class ImageController {
                 return generateFallbackImage(postId);
             }
 
-            // Пытаемся получить изображение из локальной папки
-            String fileName = post.getImageFileName();
-            File imageFile = new File(UPLOAD_DIR + "/" + fileName);
+            try (InputStream inputStream = minioService.getFile(post.getImageFileName())) {
+                byte[] bytes = inputStream.readAllBytes();
+                String contentType = determineContentType(post.getImageFileName());
 
-            if (!imageFile.exists()) {
-                System.err.println("Image file not found: " + imageFile.getAbsolutePath());
-                return generateFallbackImage(postId);
+                return ResponseEntity.ok()
+                        .contentType(MediaType.parseMediaType(contentType))
+                        .header(HttpHeaders.CONTENT_DISPOSITION,
+                                "inline; filename=\"" + post.getImageFileName() + "\"")
+                        .body(bytes);
             }
-
-            byte[] bytes = Files.readAllBytes(imageFile.toPath());
-
-            String contentType = determineContentType(fileName);
-
-            return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "inline; filename=\"" + post.getImageFileName() + "\"")
-                    .body(bytes);
 
         } catch (Exception e) {
             System.err.println("Error getting image: " + e.getMessage());
@@ -137,11 +127,21 @@ public class ImageController {
                 return ResponseEntity.notFound().build();
             }
 
-            if (post.getImageFileName() != null) {
-                postService.update(post);
-            }
             Map<String, Object> response = new HashMap<>();
-            response.put("message", "Image deleted successfully");
+
+            if (post.getImageFileName() != null && !post.getImageFileName().isEmpty()) {
+                try {
+                    minioService.deleteFile(post.getImageFileName());
+                    response.put("message", "Image deleted successfully");
+                } catch (Exception e) {
+                    response.put("warning", "File not found in MinIO: " + e.getMessage());
+                }
+                post.setImageFileName(null);
+                postService.update(post);
+            } else {
+                response.put("message", "No image to delete");
+            }
+
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
