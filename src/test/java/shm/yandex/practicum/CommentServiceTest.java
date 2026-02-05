@@ -75,7 +75,6 @@ public class CommentServiceTest {
     void testAddComment() {
         // Given
         Comment newComment = new Comment(null, "New comment", 5L);
-        Comment savedComment = new Comment(1L, "New comment", 5L);
 
         // Настраиваем mock: сохраняем переданный комментарий и возвращаем его же
         when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> {

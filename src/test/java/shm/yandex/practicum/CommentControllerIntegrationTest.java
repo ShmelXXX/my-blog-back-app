@@ -3,31 +3,23 @@ package shm.yandex.practicum;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.junit.jupiter.web.SpringJUnitWebConfig;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
-import shm.yandex.practicum.configuration.DataSourceConfiguration;
-import shm.yandex.practicum.configuration.MinioConfig;
-import shm.yandex.practicum.configuration.RestConfiguration;
-import shm.yandex.practicum.configuration.WebConfig;
 
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.hamcrest.Matchers.*;
 
-@SpringJUnitWebConfig(classes = {
-        DataSourceConfiguration.class,
-        RestConfiguration.class,
-        MinioConfig.class,
-        WebConfig.class
-})
-@TestPropertySource(locations = "classpath:test-application.properties")
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.MOCK
+)
+@AutoConfigureMockMvc
 public class CommentControllerIntegrationTest {
 
     @Autowired
