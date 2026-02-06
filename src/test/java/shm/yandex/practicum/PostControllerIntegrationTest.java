@@ -3,9 +3,9 @@ package shm.yandex.practicum;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.junit.jupiter.web.SpringJUnitWebConfig;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
@@ -14,14 +14,10 @@ import shm.yandex.practicum.configuration.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringJUnitWebConfig(classes = {
-        WebConfiguration.class,
-        DataSourceConfiguration.class,
-        RestConfiguration.class,
-        MinioConfig.class,
-        WebConfig.class
-})
-@TestPropertySource(locations = "classpath:test-application.properties")
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.MOCK
+)
+@AutoConfigureMockMvc
 public class PostControllerIntegrationTest {
 
     @Autowired
